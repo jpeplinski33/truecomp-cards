@@ -12,3 +12,5 @@ web/.vercel/
 research/*.m4a
 web/out/
 .gh-pages-deploy/
+research/*.mov
+research/replay-frames/
