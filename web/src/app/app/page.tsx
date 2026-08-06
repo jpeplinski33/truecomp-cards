@@ -66,7 +66,7 @@ export default function DashboardPage() {
             return (
               <Link
                 key={col.id}
-                href={`/app/collections/${col.id}`}
+                href={`/app/collections/view/?id=${col.id}`}
                 className="card transition hover:border-teal-500/30"
               >
                 <h3 className="font-semibold">{col.name}</h3>

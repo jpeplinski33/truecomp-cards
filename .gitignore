@@ -10,3 +10,5 @@ web/node_modules/
 web/.next/
 web/.vercel/
 research/*.m4a
+web/out/
+.gh-pages-deploy/

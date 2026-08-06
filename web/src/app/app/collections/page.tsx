@@ -68,7 +68,7 @@ export default function CollectionsPage() {
                 <p className="text-xl font-semibold text-teal-300">{formatUsd(total)}</p>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                <Link href={`/app/collections/${col.id}`} className="btn btn-secondary !py-1.5 text-sm">
+                <Link href={`/app/collections/view/?id=${col.id}`} className="btn btn-secondary !py-1.5 text-sm">
                   Open
                 </Link>
                 <Link href="/app/scanner" className="btn btn-ghost !py-1.5 text-sm">

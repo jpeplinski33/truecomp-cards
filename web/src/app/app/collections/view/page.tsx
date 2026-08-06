@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { collectionTotalCents, formatUsd, priceModeLabel } from "@/lib/format";
 
-export default function CollectionDetailPage() {
-  const { id } = useParams<{ id: string }>();
+function CollectionViewInner() {
+  const search = useSearchParams();
+  const id = search.get("id") || "";
   const { user, renameCol, deleteCard } = useApp();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
@@ -18,7 +19,7 @@ export default function CollectionDetailPage() {
     return (
       <div className="card">
         <p>Collection not found.</p>
-        <Link href="/app/collections" className="mt-3 inline-block text-teal-300 hover:underline">
+        <Link href="/app/collections/" className="mt-3 inline-block text-teal-300 hover:underline">
           ← Back to collections
         </Link>
       </div>
@@ -30,7 +31,7 @@ export default function CollectionDetailPage() {
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/app/collections" className="text-sm text-teal-300 hover:underline">
+        <Link href="/app/collections/" className="text-sm text-teal-300 hover:underline">
           ← Collections
         </Link>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
@@ -85,7 +86,7 @@ export default function CollectionDetailPage() {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Link href="/app/scanner" className="btn btn-primary">
+        <Link href="/app/scanner/" className="btn btn-primary">
           Scan card into collection
         </Link>
       </div>
@@ -93,7 +94,7 @@ export default function CollectionDetailPage() {
       {col.cards.length === 0 ? (
         <div className="card text-[var(--muted)]">
           Empty collection.{" "}
-          <Link href="/app/scanner" className="text-teal-300 hover:underline">
+          <Link href="/app/scanner/" className="text-teal-300 hover:underline">
             Scan a card
           </Link>{" "}
           to add one.
@@ -149,5 +150,13 @@ export default function CollectionDetailPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function CollectionViewPage() {
+  return (
+    <Suspense fallback={<div className="text-[var(--muted)]">Loading…</div>}>
+      <CollectionViewInner />
+    </Suspense>
   );
 }

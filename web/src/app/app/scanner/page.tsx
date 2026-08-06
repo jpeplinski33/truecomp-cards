@@ -194,7 +194,7 @@ export default function ScannerPage() {
                         <button
                           type="button"
                           className="btn btn-primary"
-                          onClick={() => router.push(`/app/collections/${activeCollectionId}`)}
+                          onClick={() => router.push(`/app/collections/view/?id=${activeCollectionId}`)}
                         >
                           View collection
                         </button>
