@@ -39,7 +39,7 @@ export default function SignupPage() {
         <div className="card w-full max-w-md">
           <h1 className="text-2xl font-semibold">Create account</h1>
           <p className="mt-2 text-sm text-[var(--muted)]">
-            Demo accounts live in this browser only. New users get a seeded sample collection.
+            Accounts live in this browser only. New accounts start with an empty collection.
           </p>
 
           <form onSubmit={onSubmit} className="mt-6 space-y-4">

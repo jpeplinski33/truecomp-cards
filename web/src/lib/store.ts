@@ -45,42 +45,6 @@ export function saveUser(user: UserProfile) {
   writeUsers(users);
 }
 
-function seedDemoCards(): CardInstance[] {
-  return [
-    {
-      id: uid("card"),
-      catalogName: "Mike Trout Base",
-      setName: "Topps Chrome",
-      year: 2011,
-      category: "sports",
-      sport: "mlb",
-      condition: "PSA 10",
-      grade: "10",
-      grader: "PSA",
-      quantity: 1,
-      valueCents: 42000,
-      sourceMode: "blend",
-      valueBreakdown: { oneThirtyPointCents: 40000, goldenCents: 46000 },
-      addedAt: new Date().toISOString(),
-      imageHint: "⚾",
-    },
-    {
-      id: uid("card"),
-      catalogName: "Charizard ex",
-      setName: "Obsidian Flames",
-      year: 2023,
-      category: "pokemon",
-      condition: "Raw NM",
-      quantity: 2,
-      valueCents: 1850,
-      sourceMode: "one_thirty_point",
-      valueBreakdown: { oneThirtyPointCents: 1850, goldenCents: 2100 },
-      addedAt: new Date().toISOString(),
-      imageHint: "🔥",
-    },
-  ];
-}
-
 export function signup(email: string, password: string, displayName: string): { ok: true; user: UserProfile } | { ok: false; error: string } {
   const normalized = email.trim().toLowerCase();
   if (!normalized || !password) return { ok: false, error: "Email and password required." };
@@ -94,7 +58,7 @@ export function signup(email: string, password: string, displayName: string): { 
     id: uid("col"),
     name: "Main collection",
     createdAt: new Date().toISOString(),
-    cards: seedDemoCards(),
+    cards: [], // empty — only real scans/adds the user saves
   };
 
   const user: UserProfile = {
