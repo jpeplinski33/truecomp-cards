@@ -1,21 +1,29 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/context/AppContext";
 import { DEMO_SCAN_CANDIDATES, dummyPriceForQuery } from "@/lib/store";
 import { formatUsd, priceModeLabel } from "@/lib/format";
 import type { PriceMode } from "@/lib/types";
 
-type Phase = "idle" | "scanning" | "results" | "saved";
+type Phase = "live" | "scanning" | "results" | "saved";
 
 export default function ScannerPage() {
   const { user, addCard } = useApp();
   const router = useRouter();
-  const [phase, setPhase] = useState<Phase>("idle");
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  const [phase, setPhase] = useState<Phase>("live");
   const [pick, setPick] = useState(0);
   const [collectionId, setCollectionId] = useState("");
   const [savedMsg, setSavedMsg] = useState("");
+  const [capturedUrl, setCapturedUrl] = useState<string | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
 
   const mode: PriceMode = user?.priceMode ?? "blend";
 
@@ -26,18 +34,134 @@ export default function ScannerPage() {
     });
   }, [mode]);
 
+  const stopCamera = useCallback(() => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setCameraReady(false);
+  }, []);
+
+  const startCamera = useCallback(async (facing: "environment" | "user" = facingMode) => {
+    setCameraError(null);
+    setCameraReady(false);
+    stopCamera();
+
+    if (typeof window === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setCameraError("This browser cannot access the camera. Use Safari/Chrome on HTTPS.");
+      return;
+    }
+
+    try {
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: { ideal: facing },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+        });
+      } catch {
+        // Fallback: any camera
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: true,
+        });
+      }
+
+      streamRef.current = stream;
+      const video = videoRef.current;
+      if (video) {
+        video.srcObject = stream;
+        video.setAttribute("playsinline", "true");
+        video.muted = true;
+        await video.play();
+        setCameraReady(true);
+      }
+    } catch (err) {
+      const name = err instanceof DOMException ? err.name : "Error";
+      if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+        setCameraError("Camera permission denied. Allow camera access for this site and reload.");
+      } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+        setCameraError("No camera found on this device.");
+      } else if (name === "NotReadableError") {
+        setCameraError("Camera is in use by another app. Close it and try again.");
+      } else {
+        setCameraError("Could not open camera. Check permissions and try again.");
+      }
+    }
+  }, [facingMode, stopCamera]);
+
+  useEffect(() => {
+    void startCamera("environment");
+    return () => stopCamera();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Re-attach stream when returning to live after capture
+  useEffect(() => {
+    if (phase === "live" && !streamRef.current && !cameraError) {
+      void startCamera(facingMode);
+    }
+  }, [phase, cameraError, facingMode, startCamera]);
+
   if (!user) return null;
 
   const activeCollectionId = collectionId || user.collections[0]?.id || "";
   const selected = candidates[pick];
 
+  function captureFrame(): string | null {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || !video.videoWidth) return null;
+
+    const w = video.videoWidth;
+    const h = video.videoHeight;
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0, w, h);
+    return canvas.toDataURL("image/jpeg", 0.92);
+  }
+
   function startScan() {
-    setPhase("scanning");
     setSavedMsg("");
+    setCameraError(null);
+
+    const dataUrl = captureFrame();
+    if (!dataUrl) {
+      setCameraError("Camera not ready yet — wait for the live preview, then tap Scan.");
+      return;
+    }
+
+    setCapturedUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return dataUrl;
+    });
+    setPhase("scanning");
+    stopCamera();
+
+    // Demo identify (real ML later) — still shows YOUR photo
     window.setTimeout(() => {
       setPick(0);
       setPhase("results");
-    }, 1100);
+    }, 900);
+  }
+
+  function scanAgain() {
+    if (capturedUrl?.startsWith("blob:")) URL.revokeObjectURL(capturedUrl);
+    setCapturedUrl(null);
+    setPhase("live");
+    setSavedMsg("");
+    void startCamera(facingMode);
+  }
+
+  async function flipCamera() {
+    const next = facingMode === "environment" ? "user" : "environment";
+    setFacingMode(next);
+    if (phase === "live") await startCamera(next);
   }
 
   function saveSelected() {
@@ -58,42 +182,99 @@ export default function ScannerPage() {
       valueBreakdown: selected.breakdown,
       imageHint: selected.imageHint,
     });
-    const colName = user!.collections.find((c) => c.id === activeCollectionId)?.name ?? "collection";
+    const colName =
+      user!.collections.find((c) => c.id === activeCollectionId)?.name ?? "collection";
     setSavedMsg(`Saved ${selected.catalogName} → ${colName} at ${formatUsd(selected.valueCents)}`);
     setPhase("saved");
   }
 
+  const showLive = phase === "live";
+  const showCapture = phase === "scanning" || phase === "results" || phase === "saved";
+
   return (
-    <div className="mx-auto max-w-3xl space-y-8">
+    <div className="mx-auto max-w-3xl space-y-6">
       <div>
         <h1 className="text-2xl font-semibold sm:text-3xl">Scanner</h1>
         <p className="mt-1 text-[var(--muted)]">
-          Demo scanner — simulated identify in ~1s, then confirm and save. Real camera/ML
-          comes later. Pricing uses your settings ({priceModeLabel(mode)}).
+          Live camera — align the card, scan, confirm match, save. Pricing:{" "}
+          {priceModeLabel(mode)}.
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,320px)_1fr]">
         <div>
-          <div className="scan-frame">
+          <div className="scan-viewport">
+            {/* Live camera */}
+            <video
+              ref={videoRef}
+              className={`scan-video ${showLive ? "is-visible" : "is-hidden"}`}
+              playsInline
+              muted
+              autoPlay
+            />
+
+            {/* Captured still */}
+            {capturedUrl && showCapture && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={capturedUrl} alt="Captured card" className="scan-capture" />
+            )}
+
             {phase === "scanning" && <div className="scan-line" />}
-            <span className="relative z-10 text-5xl">
-              {phase === "results" || phase === "saved" ? selected?.imageHint || "🃏" : "📷"}
-            </span>
-            <p className="relative z-10 px-4 text-center text-sm text-[var(--muted)]">
-              {phase === "idle" && "Align card in frame"}
-              {phase === "scanning" && "Identifying…"}
-              {(phase === "results" || phase === "saved") && selected?.catalogName}
-            </p>
+
+            {/* Card guide overlay */}
+            {showLive && cameraReady && (
+              <div className="scan-guide" aria-hidden>
+                <div className="scan-guide-inner" />
+              </div>
+            )}
+
+            {showLive && !cameraReady && !cameraError && (
+              <div className="scan-status">Starting camera…</div>
+            )}
+
+            {cameraError && phase === "live" && (
+              <div className="scan-status scan-status-error">{cameraError}</div>
+            )}
+
+            {phase === "scanning" && (
+              <div className="scan-status">Identifying card…</div>
+            )}
           </div>
-          <button
-            type="button"
-            className="btn btn-primary mt-4 w-full"
-            onClick={startScan}
-            disabled={phase === "scanning"}
-          >
-            {phase === "scanning" ? "Scanning…" : phase === "idle" ? "Capture & scan" : "Scan again"}
-          </button>
+
+          <canvas ref={canvasRef} className="hidden" />
+
+          <div className="mt-3 flex flex-col gap-2">
+            {phase === "live" && (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-primary w-full"
+                  onClick={startScan}
+                  disabled={!cameraReady}
+                >
+                  {cameraReady ? "Scan card" : "Waiting for camera…"}
+                </button>
+                <div className="flex gap-2">
+                  <button type="button" className="btn btn-secondary flex-1" onClick={flipCamera}>
+                    Flip camera
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary flex-1"
+                    onClick={() => void startCamera(facingMode)}
+                  >
+                    Retry camera
+                  </button>
+                </div>
+              </>
+            )}
+
+            {(phase === "results" || phase === "saved") && (
+              <button type="button" className="btn btn-secondary w-full" onClick={scanAgain}>
+                Scan another
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="space-y-4">
@@ -115,16 +296,13 @@ export default function ScannerPage() {
             </select>
           </div>
 
-          {phase === "idle" && (
+          {phase === "live" && (
             <div className="card text-sm text-[var(--muted)]">
-              Hit <strong className="text-white">Capture & scan</strong>. You&apos;ll get ranked
-              candidates (top matches), pick the right card, see value, and save to a collection.
-            </div>
-          )}
-
-          {phase === "scanning" && (
-            <div className="card text-sm text-teal-200/90">
-              On-device warp + embedding retrieve… ranking candidates…
+              <strong className="text-white">1.</strong> Allow camera when asked.
+              <br />
+              <strong className="text-white">2.</strong> Fill the guide with the card (good light, flat).
+              <br />
+              <strong className="text-white">3.</strong> Tap <strong className="text-white">Scan card</strong>.
             </div>
           )}
 
@@ -132,6 +310,9 @@ export default function ScannerPage() {
             <>
               <div className="card space-y-3">
                 <p className="text-sm font-medium">Confirm match (top candidates)</p>
+                <p className="text-xs text-[var(--muted)]">
+                  Identify is still demo data — your photo is real. Pick the closest card.
+                </p>
                 {candidates.map((c, i) => (
                   <button
                     key={c.catalogName}
@@ -162,7 +343,9 @@ export default function ScannerPage() {
 
               {selected && (
                 <div className="card">
-                  <p className="text-sm text-[var(--muted)]">Value breakdown ({priceModeLabel(mode)})</p>
+                  <p className="text-sm text-[var(--muted)]">
+                    Value ({priceModeLabel(mode)})
+                  </p>
                   <p className="mt-1 text-3xl font-semibold text-teal-300">
                     {formatUsd(selected.valueCents)}
                   </p>
@@ -175,11 +358,17 @@ export default function ScannerPage() {
                     </div>
                     <div className="rounded-lg border border-[var(--border)] bg-black/20 p-2">
                       <p className="text-xs text-[var(--muted)]">Golden-style</p>
-                      <p className="font-medium">{formatUsd(selected.breakdown.goldenCents)}</p>
+                      <p className="font-medium">
+                        {formatUsd(selected.breakdown.goldenCents)}
+                      </p>
                     </div>
                   </div>
                   {phase !== "saved" ? (
-                    <button type="button" className="btn btn-primary mt-4 w-full" onClick={saveSelected}>
+                    <button
+                      type="button"
+                      className="btn btn-primary mt-4 w-full"
+                      onClick={saveSelected}
+                    >
                       Save to collection
                     </button>
                   ) : (
@@ -187,18 +376,15 @@ export default function ScannerPage() {
                       <p className="rounded-lg border border-teal-500/30 bg-teal-500/10 px-3 py-2 text-sm text-teal-100">
                         {savedMsg}
                       </p>
-                      <div className="flex flex-wrap gap-2">
-                        <button type="button" className="btn btn-secondary" onClick={startScan}>
-                          Scan another
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-primary"
-                          onClick={() => router.push(`/app/collections/view/?id=${activeCollectionId}`)}
-                        >
-                          View collection
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-primary w-full"
+                        onClick={() =>
+                          router.push(`/app/collections/view/?id=${activeCollectionId}`)
+                        }
+                      >
+                        View collection
+                      </button>
                     </div>
                   )}
                 </div>

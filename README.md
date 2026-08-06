@@ -2,7 +2,18 @@
 
 Local demo of the sports + Pokémon card value app.
 
-## Run
+## Public links
+
+| Link | Notes |
+|------|--------|
+| **https://jpeplinski33.github.io/truecomp-cards/** | Permanent static host (GitHub Pages) — works off your network once build finishes |
+| Cloudflare tunnel (while this Mac + dev server run) | See session notes; temporary |
+
+Repo: https://github.com/jpeplinski33/truecomp-cards
+
+**Note:** Demo accounts live in the **browser’s localStorage**. Phone and laptop do not share the same login until real backend auth is wired.
+
+## Run locally
 
 ```bash
 cd ~/Projects/card-value-app/web
