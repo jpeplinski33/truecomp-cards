@@ -119,7 +119,7 @@ export default function DashboardPage() {
                     <td className="text-sm text-[var(--muted)]">{c.collectionName}</td>
                     <td className="text-sm">{c.condition}</td>
                     <td className="pr-4 text-right font-medium">
-                      {formatUsd(c.valueCents * c.quantity)}
+                      {formatUsd(c.valueCents == null ? null : c.valueCents * c.quantity)}
                     </td>
                   </tr>
                 ))}

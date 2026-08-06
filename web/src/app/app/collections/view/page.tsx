@@ -132,7 +132,7 @@ function CollectionViewInner() {
                   <td className="text-xs text-[var(--muted)]">{priceModeLabel(c.sourceMode)}</td>
                   <td className="text-right text-sm">{formatUsd(c.valueCents)}</td>
                   <td className="pr-4 text-right font-medium">
-                    {formatUsd(c.valueCents * c.quantity)}
+                    {formatUsd(c.valueCents == null ? null : c.valueCents * c.quantity)}
                   </td>
                   <td className="pr-3">
                     <button

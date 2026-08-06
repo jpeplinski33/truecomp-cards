@@ -11,12 +11,10 @@ export type CardInstance = {
   grade?: string;
   grader?: string;
   quantity: number;
-  valueCents: number;
+  /** User-entered comps value only — null until they set it from real sources */
+  valueCents: number | null;
   sourceMode: PriceMode;
-  valueBreakdown?: {
-    oneThirtyPointCents?: number;
-    goldenCents?: number;
-  };
+  valueNote?: string; // e.g. "from 130point sold median"
   addedAt: string;
   imageHint?: string;
 };

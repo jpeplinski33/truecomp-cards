@@ -157,75 +157,21 @@ export function removeCard(userId: string, collectionId: string, cardId: string)
   return user;
 }
 
-/** Dummy pricing: deterministic-ish fake comps for demo UI */
-export function dummyPriceForQuery(
-  name: string,
-  mode: PriceMode
-): {
-  valueCents: number;
-  breakdown: { oneThirtyPointCents: number; goldenCents: number };
-  label: string;
-} {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-  const base = 800 + (hash % 45000);
-  const oneThirty = Math.round(base * (0.9 + (hash % 20) / 100));
-  const golden = Math.round(base * (1.05 + (hash % 15) / 100));
-  const blend = Math.round(oneThirty * 0.7 + golden * 0.3);
-  const valueCents = mode === "one_thirty_point" ? oneThirty : mode === "golden" ? golden : blend;
-  return {
-    valueCents,
-    breakdown: { oneThirtyPointCents: oneThirty, goldenCents: golden },
-    label: name,
-  };
+export function updateCardValue(
+  userId: string,
+  collectionId: string,
+  cardId: string,
+  valueCents: number | null,
+  valueNote?: string
+) {
+  const user = getUser(userId);
+  if (!user) return null;
+  const col = user.collections.find((c) => c.id === collectionId);
+  if (!col) return null;
+  const card = col.cards.find((c) => c.id === cardId);
+  if (!card) return null;
+  card.valueCents = valueCents;
+  if (valueNote !== undefined) card.valueNote = valueNote;
+  saveUser(user);
+  return user;
 }
-
-export const DEMO_SCAN_CANDIDATES = [
-  {
-    catalogName: "Shohei Ohtani Refractor",
-    setName: "Topps Chrome",
-    year: 2018,
-    category: "sports" as const,
-    sport: "mlb",
-    condition: "Raw NM",
-    imageHint: "⚾",
-  },
-  {
-    catalogName: "Pikachu VMAX",
-    setName: "Vivid Voltage",
-    year: 2020,
-    category: "pokemon" as const,
-    condition: "Raw LP",
-    imageHint: "⚡",
-  },
-  {
-    catalogName: "Luka Doncic Prizm Silver",
-    setName: "Panini Prizm",
-    year: 2018,
-    category: "sports" as const,
-    sport: "nba",
-    condition: "PSA 9",
-    grade: "9",
-    grader: "PSA",
-    imageHint: "🏀",
-  },
-  {
-    catalogName: "Umbreon VMAX Alt Art",
-    setName: "Evolving Skies",
-    year: 2021,
-    category: "pokemon" as const,
-    condition: "Raw NM",
-    imageHint: "🌙",
-  },
-  {
-    catalogName: "Patrick Mahomes Optic Rated Rookie",
-    setName: "Donruss Optic",
-    year: 2017,
-    category: "sports" as const,
-    sport: "nfl",
-    condition: "BGS 9.5",
-    grade: "9.5",
-    grader: "BGS",
-    imageHint: "🏈",
-  },
-];

@@ -3,23 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/context/AppContext";
-import { dummyPriceForQuery } from "@/lib/store";
-import { formatUsd, priceModeLabel } from "@/lib/format";
+import { formatUsd, parseUsdToCents, priceModeLabel } from "@/lib/format";
 import { identifyFromImage } from "@/lib/identify";
 import { searchCatalog, type MatchResult } from "@/lib/catalog";
+import { allSourceLinks } from "@/lib/comps";
 import type { PriceMode } from "@/lib/types";
 
 type Phase = "live" | "scanning" | "results" | "saved";
-
-type PricedMatch = MatchResult & {
-  valueCents: number;
-  breakdown: { oneThirtyPointCents: number; goldenCents: number };
-};
-
-function priceMatch(m: MatchResult, mode: PriceMode): PricedMatch {
-  const price = dummyPriceForQuery(`${m.catalogName} ${m.setName} ${m.year}`, mode);
-  return { ...m, ...price };
-}
 
 export default function ScannerPage() {
   const { user, addCard } = useApp();
@@ -28,6 +18,9 @@ export default function ScannerPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const startingRef = useRef(false);
+  const autoArmedRef = useRef(true);
+  const lastMotionRef = useRef(0);
+  const sampleCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const [phase, setPhase] = useState<Phase>("live");
   const [pick, setPick] = useState(0);
@@ -39,18 +32,17 @@ export default function ScannerPage() {
   const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
   const [statusMsg, setStatusMsg] = useState("");
   const [ocrText, setOcrText] = useState("");
-  const [candidates, setCandidates] = useState<PricedMatch[]>([]);
+  const [candidates, setCandidates] = useState<MatchResult[]>([]);
   const [manualQuery, setManualQuery] = useState("");
+  const [valueInput, setValueInput] = useState("");
+  const [autoHint, setAutoHint] = useState("Point at a card — auto-scans when steady");
 
   const mode: PriceMode = user?.priceMode ?? "blend";
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
-    const v = videoRef.current;
-    if (v) {
-      v.srcObject = null;
-    }
+    if (videoRef.current) videoRef.current.srcObject = null;
     setCameraReady(false);
   }, []);
 
@@ -66,11 +58,11 @@ export default function ScannerPage() {
     try {
       await video.play();
     } catch {
-      // iOS sometimes needs a second play after metadata
-      await new Promise((r) => setTimeout(r, 100));
+      await new Promise((r) => setTimeout(r, 120));
       await video.play().catch(() => undefined);
     }
     setCameraReady(true);
+    autoArmedRef.current = true;
   }, []);
 
   const startCamera = useCallback(
@@ -82,14 +74,15 @@ export default function ScannerPage() {
       stopCamera();
 
       if (typeof window === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-        setCameraError("Camera API unavailable. Use Safari or Chrome over HTTPS.");
+        setCameraError("Camera API unavailable. Use Safari/Chrome on HTTPS.");
         startingRef.current = false;
         return;
       }
 
       try {
         let stream: MediaStream | null = null;
-        const attempts: MediaStreamConstraints[] = [
+        let lastErr: unknown;
+        for (const constraints of [
           {
             audio: false,
             video: {
@@ -98,15 +91,9 @@ export default function ScannerPage() {
               height: { ideal: 1080 },
             },
           },
-          {
-            audio: false,
-            video: { facingMode: facing },
-          },
+          { audio: false, video: { facingMode: facing } },
           { audio: false, video: true },
-        ];
-
-        let lastErr: unknown;
-        for (const constraints of attempts) {
+        ] as MediaStreamConstraints[]) {
           try {
             stream = await navigator.mediaDevices.getUserMedia(constraints);
             break;
@@ -114,22 +101,20 @@ export default function ScannerPage() {
             lastErr = e;
           }
         }
-
         if (!stream) throw lastErr ?? new Error("getUserMedia failed");
-
         await attachStream(stream);
       } catch (err) {
         const name = err instanceof DOMException ? err.name : "Error";
         if (name === "NotAllowedError" || name === "PermissionDeniedError") {
           setCameraError(
-            "Camera blocked. On iPhone: Settings → Safari → Camera → Allow, then reload this page."
+            "Camera blocked. iPhone: Settings → Safari → Camera → Allow, then reload."
           );
-        } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
-          setCameraError("No camera found on this device.");
+        } else if (name === "NotFoundError") {
+          setCameraError("No camera found.");
         } else if (name === "NotReadableError") {
-          setCameraError("Camera busy in another app. Close it and tap Retry.");
+          setCameraError("Camera busy in another app.");
         } else {
-          setCameraError("Could not open camera. Tap Retry camera, or use photo upload below.");
+          setCameraError("Could not open camera. Use Upload photo.");
         }
       } finally {
         startingRef.current = false;
@@ -138,27 +123,14 @@ export default function ScannerPage() {
     [attachStream, facingMode, stopCamera]
   );
 
-  // Start camera when entering live phase
   useEffect(() => {
-    if (phase === "live") {
-      void startCamera(facingMode);
-    }
-    return () => {
-      // only stop when leaving page entirely — handled below
-    };
+    if (phase === "live") void startCamera(facingMode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
-  useEffect(() => {
-    return () => stopCamera();
-  }, [stopCamera]);
+  useEffect(() => () => stopCamera(), [stopCamera]);
 
-  if (!user) return null;
-
-  const activeCollectionId = collectionId || user.collections[0]?.id || "";
-  const selected = candidates[pick] ?? null;
-
-  function captureFrame(): string | null {
+  const captureFrame = useCallback((): string | null => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return null;
@@ -171,56 +143,145 @@ export default function ScannerPage() {
     if (!ctx) return null;
     ctx.drawImage(video, 0, 0, w, h);
     return canvas.toDataURL("image/jpeg", 0.92);
-  }
+  }, []);
 
-  async function runIdentify(dataUrl: string) {
+  const runIdentify = useCallback(async (dataUrl: string) => {
     setPhase("scanning");
-    setStatusMsg("Identifying…");
+    setStatusMsg("Reading card…");
     setCandidates([]);
     setOcrText("");
     setPick(0);
-
+    setValueInput("");
     try {
       const outcome = await identifyFromImage(dataUrl, setStatusMsg);
       setOcrText(outcome.ocrText);
-      const priced = outcome.matches.map((m) => priceMatch(m, mode));
-      setCandidates(priced);
+      setCandidates(outcome.matches);
       setPhase("results");
       setStatusMsg(
-        priced.length
-          ? `Found ${priced.length} match${priced.length === 1 ? "" : "es"}`
-          : "Couldn't read the card — search manually below"
+        outcome.matches.length
+          ? `Matched ${outcome.matches.length} — open real comps below (not fake $)`
+          : "No catalog match — search name, then open 130point for real solds"
       );
     } catch {
       setCandidates([]);
       setPhase("results");
-      setStatusMsg("Identify failed — search manually below");
+      setStatusMsg("Identify failed — search manually, then open 130point");
     }
-  }
+  }, []);
 
-  async function onScanTap() {
+  const onScan = useCallback(async () => {
     setSavedMsg("");
     setCameraError(null);
     const dataUrl = captureFrame();
     if (!dataUrl) {
-      setCameraError("Camera not ready. Wait for the live preview, then tap Scan card.");
+      setCameraError("Camera not ready yet.");
       return;
     }
+    autoArmedRef.current = false;
     setCapturedUrl(dataUrl);
     stopCamera();
     await runIdentify(dataUrl);
-  }
+  }, [captureFrame, runIdentify, stopCamera]);
+
+  // Auto-scan: when live + ready, wait for steady frame then fire once
+  useEffect(() => {
+    if (phase !== "live" || !cameraReady) return;
+
+    let raf = 0;
+    let lastSample = "";
+    let steadyMs = 0;
+    let lastTs = performance.now();
+    const NEED_STEADY_MS = 900;
+    const CHECK_EVERY = 200;
+
+    const tick = (ts: number) => {
+      raf = requestAnimationFrame(tick);
+      if (!autoArmedRef.current) return;
+      if (ts - lastTs < CHECK_EVERY) return;
+      lastTs = ts;
+
+      const video = videoRef.current;
+      if (!video || !video.videoWidth) return;
+
+      if (!sampleCanvasRef.current) {
+        sampleCanvasRef.current = document.createElement("canvas");
+      }
+      const c = sampleCanvasRef.current;
+      const sw = 48;
+      const sh = 64;
+      c.width = sw;
+      c.height = sh;
+      const ctx = c.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0, sw, sh);
+      const data = ctx.getImageData(0, 0, sw, sh).data;
+      // brightness + simple hash for motion
+      let sum = 0;
+      let hash = 0;
+      for (let i = 0; i < data.length; i += 16) {
+        const v = data[i] + data[i + 1] + data[i + 2];
+        sum += v;
+        hash = (hash * 31 + v) >>> 0;
+      }
+      const sample = `${hash}`;
+      const brightness = sum / (data.length / 16) / 3;
+
+      if (brightness < 25) {
+        setAutoHint("Too dark — add light");
+        steadyMs = 0;
+        lastSample = sample;
+        return;
+      }
+
+      if (sample === lastSample) {
+        steadyMs += CHECK_EVERY;
+        setAutoHint(
+          steadyMs >= NEED_STEADY_MS
+            ? "Scanning…"
+            : `Hold steady… ${Math.min(100, Math.round((steadyMs / NEED_STEADY_MS) * 100))}%`
+        );
+        if (steadyMs >= NEED_STEADY_MS) {
+          autoArmedRef.current = false;
+          lastMotionRef.current = ts;
+          void onScan();
+        }
+      } else {
+        steadyMs = 0;
+        lastSample = sample;
+        setAutoHint("Point at a card — auto-scans when steady");
+      }
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [phase, cameraReady, onScan]);
+
+  if (!user) return null;
+
+  const activeCollectionId = collectionId || user.collections[0]?.id || "";
+  const selected = candidates[pick] ?? null;
+  const links = selected
+    ? allSourceLinks({
+        catalogName: selected.catalogName,
+        setName: selected.setName,
+        year: selected.year,
+        condition: selected.condition,
+        grade: selected.grade,
+        grader: selected.grader,
+        category: selected.category,
+      })
+    : null;
 
   async function onFileUpload(file: File | null) {
     if (!file) return;
     setSavedMsg("");
-    setCameraError(null);
     const dataUrl = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(String(reader.result));
       reader.onerror = () => reject(reader.error);
       reader.readAsDataURL(file);
     });
+    autoArmedRef.current = false;
     setCapturedUrl(dataUrl);
     stopCamera();
     await runIdentify(dataUrl);
@@ -233,27 +294,25 @@ export default function ScannerPage() {
     setManualQuery("");
     setSavedMsg("");
     setStatusMsg("");
+    setValueInput("");
     setPhase("live");
-  }
-
-  async function flipCamera() {
-    const next = facingMode === "environment" ? "user" : "environment";
-    setFacingMode(next);
-    if (phase === "live") await startCamera(next);
+    autoArmedRef.current = true;
   }
 
   function applyManualSearch() {
-    const hits = searchCatalog(manualQuery, 8).map((m) => priceMatch(m, mode));
+    const hits = searchCatalog(manualQuery, 8);
     setCandidates(hits);
     setPick(0);
-    setStatusMsg(
-      hits.length ? `Search: ${hits.length} result(s)` : "No catalog hits — try another name"
-    );
-    if (phase === "live") setPhase("results");
+    setStatusMsg(hits.length ? `Search: ${hits.length} result(s)` : "No catalog hits");
+    if (phase === "live") {
+      stopCamera();
+      setPhase("results");
+    }
   }
 
   function saveSelected() {
     if (!selected || !activeCollectionId) return;
+    const cents = parseUsdToCents(valueInput);
     addCard(activeCollectionId, {
       catalogName: selected.catalogName,
       setName: selected.setName,
@@ -264,15 +323,17 @@ export default function ScannerPage() {
       grade: selected.grade,
       grader: selected.grader,
       quantity: 1,
-      valueCents: selected.valueCents,
+      valueCents: cents,
       sourceMode: mode,
-      valueBreakdown: selected.breakdown,
+      valueNote: cents != null ? "User comps (from 130point / market)" : undefined,
       imageHint: selected.imageHint,
     });
     const colName =
       user!.collections.find((c) => c.id === activeCollectionId)?.name ?? "collection";
     setSavedMsg(
-      `Saved ${selected.catalogName} → ${colName} at ${formatUsd(selected.valueCents)}`
+      cents != null
+        ? `Saved ${selected.catalogName} @ ${formatUsd(cents)} → ${colName}`
+        : `Saved ${selected.catalogName} with no value yet → ${colName}`
     );
     setPhase("saved");
   }
@@ -285,8 +346,9 @@ export default function ScannerPage() {
       <div>
         <h1 className="text-2xl font-semibold sm:text-3xl">Scanner</h1>
         <p className="mt-1 text-[var(--muted)]">
-          Live camera → capture → read text → match catalog → value. Pricing:{" "}
-          {priceModeLabel(mode)}.
+          Auto-scan when steady. Values come from <strong className="text-white">real comps links</strong>{" "}
+          (130point / Goldin / eBay sold) — we do <strong className="text-white">not</strong> invent prices.
+          Preference: {priceModeLabel(mode)}.
         </p>
       </div>
 
@@ -300,33 +362,29 @@ export default function ScannerPage() {
               muted
               autoPlay
             />
-
             {capturedUrl && showCapture && (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={capturedUrl} alt="Captured card" className="scan-capture" />
             )}
-
             {phase === "scanning" && <div className="scan-line" />}
-
             {showLive && cameraReady && (
               <div className="scan-guide" aria-hidden>
                 <div className="scan-guide-inner" />
               </div>
             )}
-
             {showLive && !cameraReady && !cameraError && (
               <div className="scan-status">Starting camera…</div>
             )}
-
+            {showLive && cameraReady && !cameraError && (
+              <div className="scan-status">{autoHint}</div>
+            )}
             {cameraError && showLive && (
               <div className="scan-status scan-status-error">{cameraError}</div>
             )}
-
             {phase === "scanning" && (
               <div className="scan-status">{statusMsg || "Identifying…"}</div>
             )}
           </div>
-
           <canvas ref={canvasRef} className="hidden" />
 
           <div className="mt-3 flex flex-col gap-2">
@@ -335,29 +393,33 @@ export default function ScannerPage() {
                 <button
                   type="button"
                   className="btn btn-primary w-full"
-                  onClick={() => void onScanTap()}
+                  onClick={() => void onScan()}
                   disabled={!cameraReady}
                 >
-                  {cameraReady ? "Scan card" : "Waiting for camera…"}
+                  Scan now
                 </button>
                 <div className="flex gap-2">
                   <button
                     type="button"
                     className="btn btn-secondary flex-1"
-                    onClick={() => void flipCamera()}
+                    onClick={() => {
+                      const next = facingMode === "environment" ? "user" : "environment";
+                      setFacingMode(next);
+                      void startCamera(next);
+                    }}
                   >
-                    Flip camera
+                    Flip
                   </button>
                   <button
                     type="button"
                     className="btn btn-secondary flex-1"
                     onClick={() => void startCamera(facingMode)}
                   >
-                    Retry camera
+                    Retry cam
                   </button>
                 </div>
                 <label className="btn btn-secondary w-full cursor-pointer">
-                  Upload photo instead
+                  Upload photo
                   <input
                     type="file"
                     accept="image/*"
@@ -368,7 +430,6 @@ export default function ScannerPage() {
                 </label>
               </>
             )}
-
             {(phase === "results" || phase === "saved") && (
               <button type="button" className="btn btn-secondary w-full" onClick={scanAgain}>
                 Scan another
@@ -398,7 +459,7 @@ export default function ScannerPage() {
 
           <div className="card space-y-2">
             <label className="label" htmlFor="manual">
-              Search catalog (if camera miss)
+              Search catalog
             </label>
             <div className="flex gap-2">
               <input
@@ -420,19 +481,20 @@ export default function ScannerPage() {
             </div>
           </div>
 
-          {phase === "live" && (
-            <div className="card text-sm text-[var(--muted)]">
-              Fill the green guide with the card under good light, then{" "}
-              <strong className="text-white">Scan card</strong>. We read text off the card and
-              match a local catalog (not the old fake random list).
-            </div>
-          )}
+          <div className="card text-sm text-[var(--muted)]">
+            <p className="font-medium text-white">Why not inside 130point / Golden?</p>
+            <p className="mt-2">
+              Neither sells a public API for third-party apps. 130point blocks automated scrapers
+              (Cloudflare). “Golden” = <strong className="text-white">Goldin</strong> auctions —
+              a marketplace 130point already aggregates. Until we license data, we open{" "}
+              <strong className="text-white">deep links</strong> so you see real solds, then you
+              enter the value.
+            </p>
+          </div>
 
           {(phase === "results" || phase === "saved") && (
             <>
-              {statusMsg && (
-                <p className="text-sm text-teal-200/90">{statusMsg}</p>
-              )}
+              {statusMsg && <p className="text-sm text-teal-200/90">{statusMsg}</p>}
               {ocrText && (
                 <div className="card !py-2 text-xs text-[var(--muted)]">
                   <span className="font-medium text-white">OCR: </span>
@@ -442,10 +504,10 @@ export default function ScannerPage() {
               )}
 
               <div className="card space-y-3">
-                <p className="text-sm font-medium">Confirm match</p>
+                <p className="text-sm font-medium">Confirm card ID</p>
                 {candidates.length === 0 ? (
                   <p className="text-sm text-[var(--muted)]">
-                    No auto-match. Type the card name above and hit Search, then save.
+                    No auto-match. Search above, then open comps.
                   </p>
                 ) : (
                   candidates.map((c, i) => (
@@ -467,51 +529,68 @@ export default function ScannerPage() {
                         </p>
                         <p className="text-[10px] text-teal-200/70">{c.reason}</p>
                       </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-teal-300">
-                          {formatUsd(c.valueCents)}
-                        </p>
-                        <p className="text-[10px] text-[var(--muted)]">
-                          {i === 0 ? "Best match" : `Alt #${i + 1}`}
-                        </p>
-                      </div>
+                      <span className="text-[10px] text-[var(--muted)]">
+                        {i === 0 ? "Best" : `#${i + 1}`}
+                      </span>
                     </button>
                   ))
                 )}
               </div>
 
-              {selected && (
-                <div className="card">
-                  <p className="text-sm text-[var(--muted)]">
-                    Value ({priceModeLabel(mode)})
-                  </p>
-                  <p className="mt-1 text-3xl font-semibold text-teal-300">
-                    {formatUsd(selected.valueCents)}
-                  </p>
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                    <div className="rounded-lg border border-[var(--border)] bg-black/20 p-2">
-                      <p className="text-xs text-[var(--muted)]">130point-style</p>
-                      <p className="font-medium">
-                        {formatUsd(selected.breakdown.oneThirtyPointCents)}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border border-[var(--border)] bg-black/20 p-2">
-                      <p className="text-xs text-[var(--muted)]">Golden-style</p>
-                      <p className="font-medium">
-                        {formatUsd(selected.breakdown.goldenCents)}
-                      </p>
-                    </div>
-                  </div>
-                  {phase !== "saved" ? (
-                    <button
-                      type="button"
-                      className="btn btn-primary mt-4 w-full"
-                      onClick={saveSelected}
+              {selected && links && (
+                <div className="card space-y-3">
+                  <p className="text-sm font-medium">Real market comps (deep links)</p>
+                  <p className="text-xs text-[var(--muted)]">Query: {links.query}</p>
+                  <div className="flex flex-col gap-2">
+                    <a
+                      className="btn btn-primary w-full"
+                      href={links.oneThirtyPoint}
+                      target="_blank"
+                      rel="noopener noreferrer"
                     >
+                      Open 130point solds
+                    </a>
+                    <a
+                      className="btn btn-secondary w-full"
+                      href={links.golden}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Open Goldin (Golden)
+                    </a>
+                    <a
+                      className="btn btn-secondary w-full"
+                      href={links.ebaySold}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Open eBay sold
+                    </a>
+                  </div>
+
+                  <div>
+                    <label className="label" htmlFor="val">
+                      Enter value from comps (optional)
+                    </label>
+                    <input
+                      id="val"
+                      className="input"
+                      inputMode="decimal"
+                      placeholder="$0.00 — paste what 130point shows"
+                      value={valueInput}
+                      onChange={(e) => setValueInput(e.target.value)}
+                    />
+                    <p className="mt-1 text-xs text-[var(--muted)]">
+                      Leave blank to save the card with no value (shows as —).
+                    </p>
+                  </div>
+
+                  {phase !== "saved" ? (
+                    <button type="button" className="btn btn-primary w-full" onClick={saveSelected}>
                       Save to collection
                     </button>
                   ) : (
-                    <div className="mt-4 space-y-3">
+                    <div className="space-y-3">
                       <p className="rounded-lg border border-teal-500/30 bg-teal-500/10 px-3 py-2 text-sm text-teal-100">
                         {savedMsg}
                       </p>

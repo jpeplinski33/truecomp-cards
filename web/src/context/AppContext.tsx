@@ -22,6 +22,7 @@ import {
   renameCollection,
   signup as storeSignup,
   updatePriceMode,
+  updateCardValue as storeUpdateCardValue,
 } from "@/lib/store";
 import { collectionTotalCents } from "@/lib/format";
 
@@ -47,6 +48,7 @@ type AppContextValue = {
     card: Omit<CardInstance, "id" | "addedAt">
   ) => void;
   deleteCard: (collectionId: string, cardId: string) => void;
+  setCardValue: (collectionId: string, cardId: string, valueCents: number | null, note?: string) => void;
 };
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -126,6 +128,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     deleteCard: (collectionId, cardId) => {
       if (!user) return;
       removeCard(user.id, collectionId, cardId);
+      refresh();
+    },
+    setCardValue: (collectionId, cardId, valueCents, note) => {
+      if (!user) return;
+      storeUpdateCardValue(user.id, collectionId, cardId, valueCents, note);
       refresh();
     },
   };
