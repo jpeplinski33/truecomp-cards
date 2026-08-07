@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>TrueComp Cards — Set GoDaddy DNS</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+    code, pre { background: #f4f4f5; padding: 0.15rem 0.4rem; border-radius: 4px; }
+    pre { padding: 1rem; overflow: auto; }
+    .box { border: 1px solid #ddd; border-radius: 12px; padding: 1rem 1.25rem; margin: 1rem 0; }
+    button { background: #0d9488; color: white; border: 0; padding: 0.6rem 1rem; border-radius: 999px; font-weight: 600; cursor: pointer; }
+    h1 { font-size: 1.5rem; }
+    table { border-collapse: collapse; width: 100%; }
+    td, th { border: 1px solid #e5e5e5; padding: 0.5rem; text-align: left; }
+  </style>
+</head>
+<body>
+  <h1>Point truecompcards.com at the app</h1>
+  <p>Automation can’t finish GoDaddy login (bot check + 2FA). Do this once in the Chrome tab that opened:</p>
+  <ol>
+    <li>Sign in if asked (approve phone 2FA).</li>
+    <li>Open <strong>DNS</strong> for <code>truecompcards.com</code>.</li>
+    <li>Delete parking / Website Builder <strong>A</strong> records (IPs like 76.223… or 13.248…).</li>
+    <li>Add the records below. Save.</li>
+  </ol>
+  <div class="box">
+    <h2>Records</h2>
+    <table>
+      <tr><th>Type</th><th>Name</th><th>Value</th></tr>
+      <tr><td>A</td><td>@</td><td>185.199.108.153</td></tr>
+      <tr><td>A</td><td>@</td><td>185.199.109.153</td></tr>
+      <tr><td>A</td><td>@</td><td>185.199.110.153</td></tr>
+      <tr><td>A</td><td>@</td><td>185.199.111.153</td></tr>
+      <tr><td>CNAME</td><td>www</td><td>jpeplinski33.github.io</td></tr>
+    </table>
+    <p style="margin-top:1rem">
+      <button onclick="navigator.clipboard.writeText(`A @ 185.199.108.153
+A @ 185.199.109.153
+A @ 185.199.110.153
+A @ 185.199.111.153
+CNAME www jpeplinski33.github.io`)">Copy all records</button>
+    </p>
+  </div>
+  <p>When done, wait 5–30 minutes, then open <a href="https://truecompcards.com">https://truecompcards.com</a> — you should see the scanner app, not GoDaddy’s builder page.</p>
+  <p>Optional: create API keys at <a href="https://developer.godaddy.com/keys">developer.godaddy.com/keys</a> and paste them so agents can manage DNS next time without login.</p>
+</body>
+</html>
