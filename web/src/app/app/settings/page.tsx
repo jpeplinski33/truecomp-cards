@@ -7,18 +7,18 @@ import { priceModeLabel } from "@/lib/format";
 const modes: { id: PriceMode; title: string; body: string }[] = [
   {
     id: "one_thirty_point",
-    title: "130point-style",
-    body: "Liquidity comps — multi-venue solds, eBay-weighted. Matches how 130point aggregates marketplaces.",
+    title: "Liquidity comps (130point-style)",
+    body: "Multi-venue solds, eBay-weighted. Best for liquid modern raw and common graded.",
   },
   {
     id: "golden",
-    title: "Golden / Goldin-style",
-    body: "Premium auction bias — high-end venue comps (Goldin and similar). Better for slabs / whales.",
+    title: "Premium auction (Goldin-style)",
+    body: "High-end auction bias for slabs, low-pop, and premium pieces.",
   },
   {
     id: "blend",
     title: "Combined (recommended)",
-    body: "Default 70% liquidity + 30% premium. Transparent breakdown on every card.",
+    body: "Use both lenses when you research — then save the value you trust.",
   },
 ];
 
@@ -30,7 +30,7 @@ export default function SettingsPage() {
     <div className="mx-auto max-w-2xl space-y-8">
       <div>
         <h1 className="text-2xl font-semibold sm:text-3xl">Settings</h1>
-        <p className="mt-1 text-[var(--muted)]">Profile and pricing methodology</p>
+        <p className="mt-1 text-[var(--muted)]">Account and comps preference</p>
       </div>
 
       <div className="card">
@@ -45,16 +45,17 @@ export default function SettingsPage() {
             <dd>{user.email}</dd>
           </div>
           <div className="flex justify-between gap-4">
-            <dt className="text-[var(--muted)]">Active pricing</dt>
+            <dt className="text-[var(--muted)]">Comps preference</dt>
             <dd>{priceModeLabel(user.priceMode)}</dd>
           </div>
         </dl>
       </div>
 
       <div className="card space-y-3">
-        <h2 className="font-semibold">Default value source</h2>
+        <h2 className="font-semibold">Default comps lens</h2>
         <p className="text-sm text-[var(--muted)]">
-          Used for new scans. Demo numbers are simulated; production will use licensed comps.
+          Guides which market sources we open first after a scan. Values in your portfolio
+          are only what you enter from real solds — we never invent a price.
         </p>
         {modes.map((m) => (
           <button
@@ -77,10 +78,11 @@ export default function SettingsPage() {
       </div>
 
       <div className="card text-sm text-[var(--muted)]">
-        <p className="font-medium text-white">Demo notice</p>
+        <p className="font-medium text-white">About data</p>
         <p className="mt-2">
-          Accounts and collections are stored in this browser&apos;s localStorage only. Not
-          affiliated with 130point, Goldin, Card Ladder, PSA, or any card brand.
+          Card identity uses on-device camera + text match against our catalog. Market value
+          comes from sources you open (130point, Goldin, eBay sold) and optional values you
+          save. TrueComp Cards is not affiliated with those services.
         </p>
       </div>
     </div>

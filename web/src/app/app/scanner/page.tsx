@@ -482,13 +482,10 @@ export default function ScannerPage() {
           </div>
 
           <div className="card text-sm text-[var(--muted)]">
-            <p className="font-medium text-white">Why not inside 130point / Golden?</p>
+            <p className="font-medium text-white">True comps workflow</p>
             <p className="mt-2">
-              Neither sells a public API for third-party apps. 130point blocks automated scrapers
-              (Cloudflare). “Golden” = <strong className="text-white">Goldin</strong> auctions —
-              a marketplace 130point already aggregates. Until we license data, we open{" "}
-              <strong className="text-white">deep links</strong> so you see real solds, then you
-              enter the value.
+              After ID, open live solds on 130point, Goldin, or eBay — then enter the value you
+              trust. We don&apos;t invent portfolio numbers.
             </p>
           </div>
 

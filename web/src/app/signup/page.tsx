@@ -39,7 +39,7 @@ export default function SignupPage() {
         <div className="card w-full max-w-md">
           <h1 className="text-2xl font-semibold">Create account</h1>
           <p className="mt-2 text-sm text-[var(--muted)]">
-            Accounts live in this browser only. New accounts start with an empty collection.
+            New accounts start with an empty collection. Your data stays on this device until cloud sync ships.
           </p>
 
           <form onSubmit={onSubmit} className="mt-6 space-y-4">

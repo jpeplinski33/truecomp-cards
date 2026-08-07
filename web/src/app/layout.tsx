@@ -14,9 +14,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TrueComp Cards — Scan. Value. Collect.",
+  title: "TrueComp Cards — Real comps. Real collection.",
   description:
-    "Sports + Pokémon card values from multi-source comps. Scan, save collections, track total portfolio value.",
+    "Scan sports and Pokémon cards, open real market solds, save multiple collections, and track portfolio value you trust.",
+  metadataBase: new URL("https://truecompcards.com"),
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

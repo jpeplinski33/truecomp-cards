@@ -48,7 +48,7 @@ export function saveUser(user: UserProfile) {
 export function signup(email: string, password: string, displayName: string): { ok: true; user: UserProfile } | { ok: false; error: string } {
   const normalized = email.trim().toLowerCase();
   if (!normalized || !password) return { ok: false, error: "Email and password required." };
-  if (password.length < 4) return { ok: false, error: "Password must be at least 4 characters (demo)." };
+  if (password.length < 4) return { ok: false, error: "Password must be at least 4 characters." };
   const users = readUsers();
   if (users.some((u) => u.email === normalized)) {
     return { ok: false, error: "An account with that email already exists." };

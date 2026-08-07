@@ -1,15 +1,15 @@
 import type { NextConfig } from "next";
 
-const isGhPages = process.env.GH_PAGES === "1";
+// Custom domain truecompcards.com serves at site root (no /truecomp-cards basePath).
+// Set TCC_BASE_PATH=/truecomp-cards only for github.io project URL fallback builds.
+const basePath = process.env.TCC_BASE_PATH || "";
 
 const nextConfig: NextConfig = {
-  // Static export for free public hosting (GitHub Pages) — app is client-only demo
   output: "export",
   images: { unoptimized: true },
   trailingSlash: true,
-  // Project site: https://jpeplinski33.github.io/truecomp-cards/
-  basePath: isGhPages ? "/truecomp-cards" : "",
-  assetPrefix: isGhPages ? "/truecomp-cards" : "",
+  basePath: basePath || undefined,
+  assetPrefix: basePath || undefined,
 };
 
 export default nextConfig;
